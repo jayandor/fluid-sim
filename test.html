@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fluid Sim Test</title>
+
+    <style>
+        #canvas {
+            border: 4px solid #d80;
+        }
+
+        #error-status {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fluid Sim Test</h1>
+
+    <div>
+        <span id="error-status"></span>
+    </div>
+    <canvas id="canvas" height="400" width="400" oncontextmenu="return false;"></canvas>
+
+    <script>
+
+        window.requestAnimationFrame = window.requestAnimationFrame
+            || window.mozRequestAnimationFrame
+            || window.webkitRequestAnimationFrame
+            || window.msRequestAnimationFrame
+            || function(f){return setTimeout(f, 1000/60)} // simulate calling code 60 
+         
+        window.cancelAnimationFrame = window.cancelAnimationFrame
+            || window.mozCancelAnimationFrame
+            || function(requestID){clearTimeout(requestID)} //fall back
+
+        function clamp(x, a, b) {
+            return Math.max(Math.min(x, b), a);
+        }
+
+        function splatGrid(grid, x, y, amount) {
+            var splatSize = 10;
+            var gridSize = grid[0].length;
+
+            for (var i = -splatSize; i < splatSize; i++) {
+                for (var j = -splatSize; j < splatSize; j++) {
+                    splatX = x + i;
+                    splatY = y + j;
+                    if (splatX >= gridSize || splatX < 0
+                        || splatY >= gridSize || splatY < 0)
+                        continue;
+
+                    grid[splatX][splatY] += amount * 1 / (i**2 + j**2 + 0.1);
+                }
+            }
+
+            return grid;
+        }
+
+        function diffuse(grid, prev_grid, diff, dt) {
+            var iterations = 40;
+
+            var dens = grid;
+            var new_dens = prev_grid;
+            var size = grid[0].length;
+            var a = dt * diff * size * size;
+
+            for (var k = 0; k < iterations; k++) {
+                for (var y = 1; y < size - 1; y++) {
+                    var row = [];
+                    for (var x = 1; x < size - 1; x++) {
+                        var A = (new_dens[y][x - 1]);
+                        var B = (new_dens[y][x + 1]);
+                        var C = (new_dens[y - 1][x]);
+                        var D = (new_dens[y + 1][x]);
+                        var val = (dens[y][x] + a * ( A + B + C + D)) / (1 + 4*a);
+                        new_dens[y][x] = val;
+                    }
+                }
+            }
+
+            grid = new_dens;
+
+            return grid;
+        }
+
+        function advect(grid, u, v, dt) {
+            var size = grid[0].length;
+
+            var dens = grid;
+            var new_dens = [];
+
+            for (var y = 0; y < size; y++) {
+                var row = [];
+                for (var x = 0; x < size; x++) {
+                    var past_x = x - dt*u[y][x];
+                    var past_y = y - dt*v[y][x];
+
+                    past_x = clamp(past_x, 0.5, size - 2);
+                    past_y = clamp(past_y, 0.5, size - 2);
+                    var int_x = Math.floor(past_x);
+                    var int_y = Math.floor(past_y);
+
+                    var s1 = past_x - int_x;
+                    var s0 = 1 - s1;
+                    var t1 = past_y - int_y;
+                    var t0 = 1 - t1;
+
+                    var A = t0 * dens[int_y][int_x];
+                    var B = t1 * dens[int_y+1][int_x];
+                    var C = t0 * dens[int_y][int_x+1];
+                    var D = t1 * dens[int_y+1][int_x+1];
+                    var val = s0 * (A + B) + s1 * (C + D);
+
+                    row.push(val);
+
+                }
+                new_dens.push(row);
+            }
+
+            grid = new_dens;
+
+            return grid;
+        }
+
+        function checkUndefined(val, label) {
+            if (typeof val === 'undefined' || (typeof val === 'number' && isNaN(val))) {
+                console.log('set undefined value! ' + label);
+                throw 'set undefined value! ' + label;
+            }
+        }
+
+        function project(u, v, srcU, srcV) {
+
+            var size = u[0].length;
+            var h = 1.0/size;
+            var iterations = 40;
+
+            for (var y = 1; y < size - 1; y++) {
+                for (var x = 1; x < size - 1; x++) {
+                    var v_val = -0.5 * h * (u[y][x+1] - u[y][x-1] + v[y+1][x] - v[y-1][x]);
+                    var u_val = 0;
+                    srcU[y][x] = u_val;
+                    srcV[y][x] = v_val;
+                }
+            }
+
+            for (var k = 0; k < iterations; k++) {
+                for (var y = 1; y < size-1; y++) {
+                    for (var x = 1; x < size-1; x++) {
+                        srcU[y][x] = (srcV[y][x] + srcU[y][x-1] + srcU[y][x+1] + srcU[y-1][x] + srcU[y+1][x]) / 4;
+                    }
+                }
+            }
+
+            for (var y = 1; y < size - 1; y++) {
+                for (var x = 1; x < size - 1; x++) {
+                    u[y][x] -= 0.5 * (srcU[y][x+1] - srcU[y][x-1])/h;
+                    v[y][x] -= 0.5 * (srcU[y+1][x] - srcU[y-1][x])/h;
+                }
+            }
+        }
+
+        function arrayCopy(a) {
+            return JSON.parse(JSON.stringify(a));
+        }
+
+        function bilinear(f00, f10, f01, f11, x, y) {
+            var un_x = 1.0 - x; var un_y = 1.0 - y;
+            return (f00 * un_x * un_y + f10 * x * un_y + f01 * un_x * y + f11 * x * y);
+        }
+
+        function updateCanvas(frameGlobals) {
+            var densAmount = 500;
+            var velStrength = 1000;
+            var velDiff = 0.1;
+            var densDiff = 0.2;
+            var dt = 0.0005;
+
+            var canvas = frameGlobals.canvas;
+            var canvasWidth = frameGlobals.canvasWidth;
+            var canvasHeight = frameGlobals.canvasHeight;
+            var ctx = frameGlobals.ctx;
+            var t = frameGlobals.t;
+
+            var mouseX = frameGlobals.mousePosition.x;
+            var mouseY = frameGlobals.mousePosition.y;
+            var mousePixX = mouseX * canvasWidth;
+            var mousePixY = mouseY * canvasWidth;
+            var mouseFluidX = Math.floor(mouseX * frameGlobals.size);
+            var mouseFluidY = Math.floor(mouseY * frameGlobals.size);
+
+            var prevMouseX = frameGlobals.prevMousePosition.x;
+            var prevMouseY = frameGlobals.prevMousePosition.y;
+            var prevMousePixX = prevMouseX * canvasWidth;
+            var prevMousePixY = prevMouseY * canvasWidth;
+            var prevMouseFluidX = Math.floor(prevMouseX * frameGlobals.size);
+            var prevMouseFluidY = Math.floor(prevMouseY * frameGlobals.size);
+
+            var imageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+
+            var buf = new ArrayBuffer(imageData.data.length);
+            var buf8 = new Uint8ClampedArray(buf);
+            var data = new Uint32Array(buf);
+
+            var scale = Math.floor(canvasWidth / frameGlobals.size);
+
+            for (var y = 0; y < canvasHeight; ++y) {
+                for (var x = 0; x < canvasWidth; ++x) {
+
+                    var fluid_x = Math.floor(x / scale);
+                    var fluid_y = Math.floor(y / scale);
+                    fluid_x = clamp(fluid_x, 0, frameGlobals.size-2);
+                    fluid_y = clamp(fluid_y, 0, frameGlobals.size-1);
+
+                    var v00 = frameGlobals.dens[fluid_x][fluid_y];
+                    var v01 = frameGlobals.dens[fluid_x+1][fluid_y];
+                    var v10 = frameGlobals.dens[fluid_x][fluid_y+1];
+                    var v11 = frameGlobals.dens[fluid_x+1][fluid_y+1];
+                    interp_val = bilinear(v00, v01, v10, v11, (x % scale) / scale, (y % scale) / scale);
+
+                    var red = clamp(interp_val, 0, 255);
+                    var blue = clamp(interp_val * 0.2, 0, 255);
+                    var green = clamp(2^(interp_val - 155), 0, 255);
+
+                    data[y * canvasWidth + x] =
+                        (255   << 24) |    // alpha
+                        (blue  << 16) |    // blue
+                        (green <<  8) |    // green
+                         red;              // red
+                }
+            }
+
+            imageData.data.set(buf8);
+
+            ctx.putImageData(imageData, 0, 0);
+
+            // Should probably find a better way to deep copy arrays
+            var dens0 = arrayCopy(frameGlobals.dens);
+            var u0 = arrayCopy(frameGlobals.u);
+            var v0 = arrayCopy(frameGlobals.v);
+
+            // Add density
+            if (frameGlobals.mouseButton[0]) {
+                splatGrid(frameGlobals.dens, mouseFluidX, mouseFluidY, densAmount);
+            }
+            if (frameGlobals.mouseButton[1]) {
+                splatGrid(frameGlobals.dens, mouseFluidX, mouseFluidY, -densAmount);
+            }
+
+            var srcU;
+            var srcV;
+
+
+            // Add velocity
+            if (frameGlobals.mouseButton[2]) {
+                srcU = arrayCopy(
+                    splatGrid(frameGlobals.u, mouseFluidX, mouseFluidY, (mousePixY - prevMousePixY) * velStrength));
+                srcV = arrayCopy(
+                    splatGrid(frameGlobals.v, mouseFluidX, mouseFluidY, (mousePixX - prevMousePixX) * velStrength));
+            } else {
+                srcU = arrayCopy(frameGlobals.u);
+                srcV = arrayCopy(frameGlobals.v);
+            }
+
+            // Density
+            frameGlobals.dens = diffuse(frameGlobals.dens, dens0, densDiff, dt);
+            frameGlobals.dens = advect(frameGlobals.dens, frameGlobals.u, frameGlobals.v, dt);
+            // Velocity
+            frameGlobals.u = diffuse(frameGlobals.u, u0, velDiff, dt);
+            frameGlobals.v = diffuse(frameGlobals.v, v0, velDiff, dt);
+            project(frameGlobals.u, frameGlobals.v, srcU, srcV);
+            advect(frameGlobals.u, frameGlobals.u, frameGlobals.v, dt);
+            advect(frameGlobals.v, frameGlobals.u, frameGlobals.v, dt);
+            project(frameGlobals.u, frameGlobals.v, srcU, srcV);
+        }
+
+        function writeMessage(canvas, context, message) {
+            context.font = '12pt Calibri';
+            context.fillStyle = 'white';
+            context.fillText(message, 10, 25);
+        }
+
+        function drawFrame(frameGlobals) {
+            updateCanvas(frameGlobals);
+
+        }
+
+        function getMousePosition(canvas, evt) {
+            var rect = canvas.getBoundingClientRect();
+            var x = evt.clientX - rect.left;
+            var y = evt.clientY - rect.top;
+            return {
+                x: x / canvas.width,
+                y: y / canvas.height
+            };
+        }
+
+        function zeroSquareArray(size) {
+            var array = [];
+            for (var i = 0; i < size; i++) {
+                var row = [];
+                for (var j = 0; j < size; j++) {
+                    row.push(0);
+                }
+                array.push(row);
+            }
+
+            return array;
+        }
+
+        // ---------------------------------------------------------------------
+
+        var frameGlobals = {
+            t: 0,
+            mousePosition: {
+                x: 0,
+                y: 0
+            },
+            prevMousePosition: {
+                x: 0,
+                y: 0
+            },
+            mouseButton: [false, false, false],
+        };
+
+        var canvas = document.getElementById('canvas');
+        var canvasWidth  = canvas.width;
+        var canvasHeight = canvas.height;
+        var ctx = canvas.getContext('2d');
+
+        canvas.addEventListener('mousemove', function(evt) {
+            frameGlobals['prevMousePosition'] = frameGlobals['mousePosition'];
+            var mousePosition = getMousePosition(canvas, evt);
+            frameGlobals['mousePosition'] = mousePosition;
+        }, false);
+
+        canvas.addEventListener('mousedown', function(evt) {
+            var button = evt.button;
+            frameGlobals['mouseButton'][button] = true;
+        }, false);
+
+        canvas.addEventListener('mouseup', function(evt) {
+            var button = evt.button;
+            frameGlobals['mouseButton'][button] = false;
+        }, false);
+
+        frameGlobals['canvas'] = canvas;
+        frameGlobals['canvasWidth'] = canvasWidth;
+        frameGlobals['canvasHeight'] = canvasHeight;
+        frameGlobals['ctx'] = ctx;
+
+        var size = 400 / 4;
+
+        frameGlobals['size'] = size;
+        frameGlobals['u'] = zeroSquareArray(size);
+        frameGlobals['v'] = zeroSquareArray(size);
+        frameGlobals['u_prev'] = zeroSquareArray(size);
+        frameGlobals['v_prev'] = zeroSquareArray(size);
+        frameGlobals['dens'] = zeroSquareArray(size);
+        frameGlobals['dens_prev'] = zeroSquareArray(size);
+
+        splatGrid(frameGlobals.dens, 10, 6, 100);
+
+        requestAnimationFrame(function _drawFrame() {
+            try {
+                drawFrame(frameGlobals);
+                frameGlobals.t += 1;
+                requestAnimationFrame(_drawFrame);
+            } catch(error) {
+                throw error;
+            }
+
+        });
+    </script>
+</body>
+</html>

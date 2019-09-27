@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fluid Sim Test</title>
+
+    <style>
+        #canvas {
+            border: 4px solid #d80;
+        }
+
+        #error-status {
+            color: red;
+        }
+        #image {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fluid Sim Test</h1>
+
+    <div>
+        <span id="error-status"></span>
+    </div>
+    <img src="/fluid-sim/image.jpg" id="image">
+    <canvas id="canvas" height="500" width="500" oncontextmenu="return false;"></canvas>
+
+    <script id="2d-vertex-shader" type="x-shader/x-vertex">
+        // an attribute will receive data from a buffer
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        varying vec2 v_texCoord;
+
+        uniform vec2 u_resolution;
+
+        void main() {
+            // convert the position from pixels to 0.0 to 1.0
+            vec2 zeroToOne = a_position / u_resolution;
+
+            // convert from 0->1 to 0->2
+            vec2 zeroToTwo = zeroToOne * 2.0;
+
+            // convert from 0->2 to -1->+1 (clip space)
+            vec2 clipSpace = zeroToTwo - 1.0;
+
+            gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+            v_texCoord = a_texCoord;
+        }
+    </script>
+     
+    <script id="2d-fragment-shader" type="x-shader/x-fragment">
+        precision mediump float;
+         
+        // our texture
+        // uniform sampler2D u_image;
+        uniform sampler2D u_dens;
+        uniform vec2 u_textureSize;
+         
+        // the texCoords passed in from the vertex shader.
+        varying vec2 v_texCoord;
+         
+        void main() {
+            // compute 1 pixel in texture coordinates.
+            vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+         
+            // average the left, middle, and right pixels.
+            // vec4 imageColor = texture2D(u_image, v_texCoord);
+            float densColor  = texture2D(u_dens, v_texCoord).r;
+
+            vec4 total = vec4(
+                clamp(densColor, 0.0, 1.0),
+                clamp( pow(2.0, (densColor - 180.0)) * 0.5, 0.0, 1.0),
+                clamp( pow(2.0, (densColor*0.2 - 6.0)) * 9.0, 0.0, 1.0),
+                255
+            );
+            gl_FragColor = total;
+        }
+    </script>
+    <script src="/fluid-sim/helpers.js"></script>
+    <script src="/fluid-sim/webgl-canvas.js"></script>
+    <script src="/fluid-sim/fluid.js"></script>
+
+    <script type="text/javascript">
+
+
+        var img = document.getElementById('image');
+        img.onload = function() {
+
+            var size = 75;
+            var canvasSize = size * 8;
+
+            var canvas = document.getElementById('canvas');
+            canvas.width = canvasSize;
+            canvas.height = canvasSize;
+            img.width = canvas.width;
+            img.height = canvas.height;
+
+            var canvasController = new WebGLCanvasController();
+            canvasController.init(canvas);
+
+            var fluid = new Fluid();
+            fluid.init(size);
+            fluid.registerFrameListener(canvasController);
+
+            canvasController.registerFrameListener(function() {
+            });
+
+            canvasController.startAnimation();
+        }
+
+        function init() {
+
+        }
+
+        if (
+            document.readyState === "complete" ||
+            (document.readyState !== "loading" && !document.documentElement.doScroll)
+        ) {
+            init();
+        } else {
+            document.addEventListener("DOMContentLoaded", init);
+        }
+
+    </script>
+</body>
+</html>
