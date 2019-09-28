@@ -28,6 +28,8 @@ class WebGLCanvasController {
         },
         mouseButton: [false, false, false],
     };
+    program = null;
+    interpCursorSpeed = 0.2;
 
 
     init(canvas) {
@@ -61,8 +63,8 @@ class WebGLCanvasController {
         this.frameGlobals.prevMousePosition.x = this.frameGlobals.interpCursPos.x;
         this.frameGlobals.prevMousePosition.y = this.frameGlobals.interpCursPos.y;
 
-        this.frameGlobals.interpCursPos.x += 0.5 * (mouseX - this.frameGlobals.interpCursPos.x);
-        this.frameGlobals.interpCursPos.y += 0.5 * (mouseY - this.frameGlobals.interpCursPos.y);
+        this.frameGlobals.interpCursPos.x += this.interpCursorSpeed * (mouseX - this.frameGlobals.interpCursPos.x);
+        this.frameGlobals.interpCursPos.y += this.interpCursorSpeed * (mouseY - this.frameGlobals.interpCursPos.y);
 
     }
 
@@ -129,10 +131,6 @@ class WebGLCanvasController {
     }
 
     initGL() {
-
-    }
-
-    drawDataToCanvas(imageData) {
         var gl = this.frameGlobals.ctx;
         // -----------------------------------------------------------------
 
@@ -145,20 +143,26 @@ class WebGLCanvasController {
         var fragmentShader = this.createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
 
         var program = this.createProgram(gl, vertexShader, fragmentShader);
+        this.program = program;
 
         // -----------------------------------------------------------------
 
+    }
+
+    drawDataToCanvas(imageData) {
+        var gl = this.frameGlobals.ctx;
+
         // Get attribute locations
 
-        var positionAttributeLocation = gl.getAttribLocation(program, "a_position");
-        var texCoordLocation          = gl.getAttribLocation(program, "a_texCoord");
+        var positionAttributeLocation = gl.getAttribLocation(this.program, "a_position");
+        var texCoordLocation          = gl.getAttribLocation(this.program, "a_texCoord");
 
         // Get uniform locations
 
-        var resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
-        var textureSizeLocation       = gl.getUniformLocation(program, "u_textureSize");
-        // var u_imageLocation           = gl.getUniformLocation(program, "u_image");
-        var u_densLocation            = gl.getUniformLocation(program, "u_dens");
+        var resolutionUniformLocation = gl.getUniformLocation(this.program, "u_resolution");
+        var textureSizeLocation       = gl.getUniformLocation(this.program, "u_textureSize");
+        // var u_imageLocation           = gl.getUniformLocation(this.program, "u_image");
+        var u_densLocation            = gl.getUniformLocation(this.program, "u_dens");
 
         // -----------------------------------------------------------------
 
@@ -200,7 +204,7 @@ class WebGLCanvasController {
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         // Tell it to use our program (pair of shaders)
-        gl.useProgram(program);
+        gl.useProgram(this.program);
 
         // -----------------------------------------------------------------
 
@@ -230,10 +234,10 @@ class WebGLCanvasController {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
         var imageData = this.frameListeners[0][0].call(this.frameListeners[0][1], this.frameGlobals);
-        var size = Math.sqrt(imageData.length / 4);
+        var size = Math.sqrt(imageData.length);
 
         // Upload the data into the texture.
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size, size, 0, gl.RGBA, gl.UNSIGNED_BYTE, imageData);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, size, size, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, imageData);
 
         // -------------------------
 
@@ -332,6 +336,7 @@ class WebGLCanvasController {
 
     startAnimation () {
         var self = this;
+        this.initGL();
         window.requestAnimationFrame(function _drawFrame() {
             self.drawFrame(self.frameGlobals);
             self.frameGlobals.t += 1;

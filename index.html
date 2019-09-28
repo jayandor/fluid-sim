@@ -61,17 +61,16 @@
         varying vec2 v_texCoord;
          
         void main() {
-            // compute 1 pixel in texture coordinates.
-            vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
-         
-            // average the left, middle, and right pixels.
-            // vec4 imageColor = texture2D(u_image, v_texCoord);
             float densColor  = texture2D(u_dens, v_texCoord).r;
 
             vec4 total = vec4(
-                clamp(densColor, 0.0, 1.0),
-                clamp( pow(2.0, (densColor - 180.0)) * 0.5, 0.0, 1.0),
-                clamp( pow(2.0, (densColor*0.2 - 6.0)) * 9.0, 0.0, 1.0),
+                1.0 / (1.0 + pow(6.4, -5.0 * densColor + 3.0)),
+                clamp(
+                    pow(3.2, (densColor * 5.0)-5.0),
+                    0.0, 1.0),
+                clamp(
+                    pow(7.2, (densColor * 30.0)-30.1),
+                    0.0, 1.0),
                 255
             );
             gl_FragColor = total;
@@ -85,10 +84,12 @@
 
 
         var img = document.getElementById('image');
-        img.onload = function() {
 
-            var size = 75;
-            var canvasSize = size * 8;
+        function main () {
+
+            console.log('starting fluid...');
+            var size = 100;
+            var canvasSize = size * 7;
 
             var canvas = document.getElementById('canvas');
             canvas.width = canvasSize;
@@ -109,15 +110,13 @@
             canvasController.startAnimation();
         }
 
-        function init() {
-
-        }
+        //img.onload = main;
+        main();
 
         if (
             document.readyState === "complete" ||
             (document.readyState !== "loading" && !document.documentElement.doScroll)
         ) {
-            init();
         } else {
             document.addEventListener("DOMContentLoaded", init);
         }

@@ -76,10 +76,10 @@ class Fluid {
         for (var k = 0; k < this.diffuseIterations; k++) {
             for (var y = 1; y < size - 1; y++) {
                 for (var x = 1; x < size - 1; x++) {
-                    var A = (prev_grid[y][x - 1]);
-                    var B = (prev_grid[y][x + 1]);
-                    var C = (prev_grid[y - 1][x]);
-                    var D = (prev_grid[y + 1][x]);
+                    var A = prev_grid[y][x - 1];
+                    var B = prev_grid[y][x + 1];
+                    var C = prev_grid[y - 1][x];
+                    var D = prev_grid[y + 1][x];
                     var val = (grid[y][x] + a * ( A + B + C + D)) / (1 + 4*a);
                     prev_grid[y][x] = val;
                 }
@@ -295,14 +295,10 @@ class Fluid {
     gridToImageData(grid) {
         var data = [];
         var size = grid[0].length;
-        for (var y = 0; y < size; y++) {
-            for (var x = 0; x < size; x++) {
-                var val = grid[x][y];
-                data.push(clamp(val, 0, 255)); // R
-                data.push(clamp(val, 0, 255)); // G
-                data.push(clamp(val, 0, 255)); // B
-                data.push(255); // A
-            }
+        for (var i = 0; i < size * size; i++) {
+            var y = Math.floor(i / size);
+            var x = i % size;
+            data.push(clamp(grid[x][y], 0, 255)); // R
         }
         return new Uint8Array(data);
     }

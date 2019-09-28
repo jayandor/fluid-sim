@@ -25,6 +25,22 @@ function arrayCopy(a) {
     return new_a;
 }
 
+function arrayCopyToArray(a, b) {
+    var len = a.length;
+    for (var y = 0; y < len; y++) {
+        b[y] = a[y].slice();
+    }
+    return b;
+}
+
+function zeroOutArray(a) {
+    var len = a.length;
+    for (var y = 0; y < len; y++) {
+        a[y] = new Array(len).fill(0);
+    }
+    return a;
+}
+
 function bilinear(f00, f10, f01, f11, x, y) {
     var un_x = 1.0 - x; var un_y = 1.0 - y;
     return (f00 * un_x * un_y + f10 * x * un_y + f01 * un_x * y + f11 * x * y);
