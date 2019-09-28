@@ -6,21 +6,24 @@ class Fluid {
     imageData = null;
     imageWidth = 0;
     imageHeight = 0;
+    grid2 = [];
+    grid3 = [];
 
 
     dt = 0.0001 / 5;
-    splatSize = 10;
+    densSplatSize = 10;
+    velSplatSize = 17;
     velDiff = 0.9;
-    velStrength = 3000;
-    densAmount = 50;
-    densDiff = 0.2;
+    velStrength = 1000;
+    densAmount = 40;
+    densDiff = 0.9;
     diffuseIterations = 4;
     projectIterations = 4;
     imageBackground = false;
     refractBackground = false;
     refractionStrength = 0.02;
     bilinearInterpolate = true;
-    fluidIterationsPerFrame = 7;
+    fluidIterationsPerFrame = 5;
 
     buf;
     buf8;
@@ -32,8 +35,10 @@ class Fluid {
         this.u = zeroFlatSquareArray(size);
         this.v = zeroFlatSquareArray(size);
         this.dens = zeroFlatSquareArray(size);
+        this.grid2 = zeroFlatSquareArray(size);
+        this.grid3 = zeroFlatSquareArray(size);
 
-        this.splatGrid(this.dens, 10, 6, 100);
+        this.splatGrid(this.dens, this.densSplatSize, 10, 6, 100);
 
         // Load image data
         var img = document.getElementById('image');
@@ -51,18 +56,18 @@ class Fluid {
         this.data = new Uint32Array(this.buf);
     }
 
-    splatGrid(grid, x, y, amount) {
+    splatGrid(grid, splatSize, x, y, amount) {
         var gridSize = this.size;
 
-        for (var i = -this.splatSize; i < this.splatSize; i++) {
-            for (var j = -this.splatSize; j < this.splatSize; j++) {
+        for (var i = -splatSize; i < splatSize; i++) {
+            for (var j = -splatSize; j < splatSize; j++) {
                 var splatX = x + i;
                 var splatY = y + j;
                 if (splatX >= gridSize || splatX < 0
                     || splatY >= gridSize || splatY < 0)
                     continue;
 
-                grid[ aIndex(gridSize, splatX, splatY) ] += amount * 1 / (i**2 + j**2 + 0.1);
+                grid[ aIndex(gridSize, splatX, splatY) ] += amount * splatSize / ((i**2 + j**2 + 0.1) * 3);
             }
         }
 
@@ -72,17 +77,19 @@ class Fluid {
     diffuse(grid, prev_grid, diff, dt, boundType) {
         var size = this.size;
         var a = dt * diff * size * size;
+        var gridLength = grid.length;
+        var insideSize = (size - 2) * (size - 2);
 
         for (var k = 0; k < this.diffuseIterations; k++) {
-            for (var y = 1; y < size - 1; y++) {
-                for (var x = 1; x < size - 1; x++) {
-                    var A = prev_grid[ aIndex(size, x - 1, y)];
-                    var B = prev_grid[ aIndex(size, x + 1, y)];
-                    var C = prev_grid[ aIndex(size, x, y - 1)];
-                    var D = prev_grid[ aIndex(size, x, y + 1)];
-                    var val = (grid[ aIndex(size, x, y) ] + a * ( A + B + C + D)) / (1 + 4*a);
-                    prev_grid[ aIndex(size, x, y)] = val;
-                }
+            for (var i = 0; i < insideSize; i++) {
+                var j = size + 1 + i + (Math.floor(i / (size - 2)) * 2);
+
+                var A = prev_grid[ j - 1 ];
+                var B = prev_grid[ j + 1 ];
+                var C = prev_grid[ j - this.size];
+                var D = prev_grid[ j + this.size];
+                var val = (grid[ j ] + a * ( A + B + C + D)) / (1 + 4*a);
+                prev_grid[ j ] = val;
             }
         }
 
@@ -93,11 +100,10 @@ class Fluid {
         return grid;
     }
 
-    advect(grid, u, v, dt, boundType) {
+    advect(grid, grid2, u, v, dt, boundType) {
         var size = this.size;
 
-        var new_dens = [];
-
+        var i = 0;
         for (var y = 0; y < size; y++) {
             for (var x = 0; x < size; x++) {
                 var past_x = x - dt*u[ aIndex(size, x, y)];
@@ -119,11 +125,13 @@ class Fluid {
                 var D = t1 * grid[ aIndex(size, int_x+1, int_y+1)];
                 var val = s0 * (A + B) + s1 * (C + D);
 
-                new_dens.push(val);
+                grid2[i] = val;
+
+                i++;
             }
         }
 
-        grid = new_dens.slice();
+        grid = grid2.slice();
 
         this.setBoundary(grid, boundType);
 
@@ -166,22 +174,22 @@ class Fluid {
     }
 
     updateFluid() {
-        var dens0 = arrayCopy(this.dens);
-        var u0 = arrayCopy(this.u);
-        var v0 = arrayCopy(this.v);
+        var dens0 = this.dens.slice();
+        var u0 = this.u.slice();
+        var v0 = this.v.slice();
 
-        var srcU = arrayCopy(this.u);
-        var srcV = arrayCopy(this.v);
+        var srcU = this.u.slice();
+        var srcV = this.v.slice();
 
         // Density
         this.dens = this.diffuse(this.dens, dens0, this.densDiff, this.dt, 0);
-        this.dens = this.advect(this.dens, this.u, this.v, this.dt, 0);
+        this.dens = this.advect(this.dens, this.grid2, this.u, this.v, this.dt, 0);
         // Velocity
         this.u = this.diffuse(this.u, u0, this.velDiff, this.dt, 1);
         this.v = this.diffuse(this.v, v0, this.velDiff, this.dt, 2);
         this.project(this.u, this.v, srcU, srcV);
-        this.advect(this.u, this.u, this.v, this.dt, 1);
-        this.advect(this.v, this.u, this.v, this.dt, 2);
+        this.advect(this.u, this.grid2, this.u, this.v, this.dt, 1);
+        this.advect(this.v, this.grid3, this.u, this.v, this.dt, 2);
         this.project(this.u, this.v, srcU, srcV);
     }
 
@@ -367,16 +375,16 @@ class Fluid {
 
         // Add density
         if (frameGlobals.mouseButton[0]) {
-            this.splatGrid(this.dens, mouseFluidX, mouseFluidY, this.densAmount * ((mouseFluidY - prevMouseFluidY)**2 + (mouseFluidX - prevMouseFluidX)**2) * 0.06);
+            this.splatGrid(this.dens, this.densSplatSize, mouseFluidX, mouseFluidY, this.densAmount);
         }
         if (frameGlobals.mouseButton[1]) {
-            this.splatGrid(this.dens, mouseFluidX, mouseFluidY, -this.densAmount);
+            this.splatGrid(this.dens, this.densSplatSize, mouseFluidX, mouseFluidY, -this.densAmount);
         }
 
         // Add velocity
-        if (frameGlobals.mouseButton[2]) {
-            this.splatGrid(this.u, mouseFluidX, mouseFluidY, (mouseFluidX - prevMouseFluidX) * this.velStrength);
-            this.splatGrid(this.v, mouseFluidX, mouseFluidY, (mouseFluidY - prevMouseFluidY) * this.velStrength);
+        if (frameGlobals.mouseButton[2] || 1) {
+            this.splatGrid(this.u, this.velSplatSize, mouseFluidX, mouseFluidY, (mouseFluidX - prevMouseFluidX) * this.velStrength);
+            this.splatGrid(this.v, this.velSplatSize, mouseFluidX, mouseFluidY, (mouseFluidY - prevMouseFluidY) * this.velStrength);
         }
     }
 };

@@ -28,7 +28,7 @@ function aIndex(size, x, y) {
 function aCoords(size, i) {
     return [
         i % size,
-        Math.floor(y / size)
+        Math.floor(i / size)
     ];
 }
 
