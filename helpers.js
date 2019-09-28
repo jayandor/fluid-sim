@@ -15,30 +15,54 @@ function zeroSquareArray(size) {
     return array;
 }
 
+function zeroFlatSquareArray(size) {
+    var array = new Array(size * size).fill(0);
+
+    return array;
+}
+
+function aIndex(size, x, y) {
+    return (y * size) + x;
+}
+
+function aCoords(size, i) {
+    return [
+        i % size,
+        Math.floor(y / size)
+    ];
+}
+
 function arrayCopy(a) {
-    var new_a = [];
-    var len = a.length;
-    for (var i = 0; i < len; i++) {
-        var row = a[i].slice(0);
-        new_a.push(row);
-    }
-    return new_a;
+    // var new_a = [];
+    // var len = a.length;
+    // for (var i = 0; i < len; i++) {
+    //     var row = a[i].slice(0);
+    //     new_a.push(row);
+    // }
+    // return new_a;
+    return a.slice();
 }
 
 function arrayCopyToArray(a, b) {
-    var len = a.length;
-    for (var y = 0; y < len; y++) {
-        b[y] = a[y].slice();
+    // var len = a.length;
+    // for (var y = 0; y < len; y++) {
+    //     b[y] = a[y].slice();
+    // }
+    // return b;
+    for (var i = 0; i < a.length; i++) {
+        b[i] = a[i];
     }
-    return b;
 }
 
 function zeroOutArray(a) {
-    var len = a.length;
-    for (var y = 0; y < len; y++) {
-        a[y] = new Array(len).fill(0);
+    // var len = a.length;
+    // for (var y = 0; y < len; y++) {
+    //     a[y] = new Array(len).fill(0);
+    // }
+    // return a;
+    for (var i = 0; i < a.length; i++) {
+        a[i] = 0;
     }
-    return a;
 }
 
 function bilinear(f00, f10, f01, f11, x, y) {

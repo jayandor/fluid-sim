@@ -13,7 +13,7 @@ class Fluid {
     velDiff = 0.9;
     velStrength = 3000;
     densAmount = 50;
-    densDiff = 4.9;
+    densDiff = 0.2;
     diffuseIterations = 4;
     projectIterations = 4;
     imageBackground = false;
@@ -29,9 +29,9 @@ class Fluid {
     init(size) {
 
         this.size = size;
-        this.u = zeroSquareArray(size);
-        this.v = zeroSquareArray(size);
-        this.dens = zeroSquareArray(size);
+        this.u = zeroFlatSquareArray(size);
+        this.v = zeroFlatSquareArray(size);
+        this.dens = zeroFlatSquareArray(size);
 
         this.splatGrid(this.dens, 10, 6, 100);
 
@@ -52,7 +52,7 @@ class Fluid {
     }
 
     splatGrid(grid, x, y, amount) {
-        var gridSize = grid[0].length;
+        var gridSize = this.size;
 
         for (var i = -this.splatSize; i < this.splatSize; i++) {
             for (var j = -this.splatSize; j < this.splatSize; j++) {
@@ -62,7 +62,7 @@ class Fluid {
                     || splatY >= gridSize || splatY < 0)
                     continue;
 
-                grid[splatX][splatY] += amount * 1 / (i**2 + j**2 + 0.1);
+                grid[ aIndex(gridSize, splatX, splatY) ] += amount * 1 / (i**2 + j**2 + 0.1);
             }
         }
 
@@ -70,23 +70,23 @@ class Fluid {
     }
 
     diffuse(grid, prev_grid, diff, dt, boundType) {
-        var size = grid[0].length;
+        var size = this.size;
         var a = dt * diff * size * size;
 
         for (var k = 0; k < this.diffuseIterations; k++) {
             for (var y = 1; y < size - 1; y++) {
                 for (var x = 1; x < size - 1; x++) {
-                    var A = prev_grid[y][x - 1];
-                    var B = prev_grid[y][x + 1];
-                    var C = prev_grid[y - 1][x];
-                    var D = prev_grid[y + 1][x];
-                    var val = (grid[y][x] + a * ( A + B + C + D)) / (1 + 4*a);
-                    prev_grid[y][x] = val;
+                    var A = prev_grid[ aIndex(size, x - 1, y)];
+                    var B = prev_grid[ aIndex(size, x + 1, y)];
+                    var C = prev_grid[ aIndex(size, x, y - 1)];
+                    var D = prev_grid[ aIndex(size, x, y + 1)];
+                    var val = (grid[ aIndex(size, x, y) ] + a * ( A + B + C + D)) / (1 + 4*a);
+                    prev_grid[ aIndex(size, x, y)] = val;
                 }
             }
         }
 
-        grid = prev_grid;
+        grid = prev_grid.slice();
 
         this.setBoundary(grid, boundType);
 
@@ -94,15 +94,14 @@ class Fluid {
     }
 
     advect(grid, u, v, dt, boundType) {
-        var size = grid[0].length;
+        var size = this.size;
 
         var new_dens = [];
 
         for (var y = 0; y < size; y++) {
-            var row = [];
             for (var x = 0; x < size; x++) {
-                var past_x = x - dt*u[y][x];
-                var past_y = y - dt*v[y][x];
+                var past_x = x - dt*u[ aIndex(size, x, y)];
+                var past_y = y - dt*v[ aIndex(size, x, y)];
 
                 past_x = clamp(past_x, 0.5, size - 2);
                 past_y = clamp(past_y, 0.5, size - 2);
@@ -114,19 +113,17 @@ class Fluid {
                 var t1 = past_y - int_y;
                 var t0 = 1 - t1;
 
-                var A = t0 * grid[int_y][int_x];
-                var B = t1 * grid[int_y+1][int_x];
-                var C = t0 * grid[int_y][int_x+1];
-                var D = t1 * grid[int_y+1][int_x+1];
+                var A = t0 * grid[ aIndex(size, int_x, int_y)];
+                var B = t1 * grid[ aIndex(size, int_x, int_y+1)];
+                var C = t0 * grid[ aIndex(size, int_x+1, int_y)];
+                var D = t1 * grid[ aIndex(size, int_x+1, int_y+1)];
                 var val = s0 * (A + B) + s1 * (C + D);
 
-                row.push(val);
-
+                new_dens.push(val);
             }
-            new_dens.push(row);
         }
 
-        grid = new_dens;
+        grid = new_dens.slice();
 
         this.setBoundary(grid, boundType);
 
@@ -135,15 +132,15 @@ class Fluid {
 
     project(u, v, srcU, srcV) {
 
-        var size = u[0].length;
+        var size = this.size;
         var h = 1.0/size;
 
         for (var y = 1; y < size - 1; y++) {
             for (var x = 1; x < size - 1; x++) {
-                var v_val = -0.5 * h * (u[y][x+1] - u[y][x-1] + v[y+1][x] - v[y-1][x]);
+                var v_val = -0.5 * h * (u[ aIndex(size, x+1, y)] - u[ aIndex(size, x-1, y)] + v[ aIndex(size, x, y+1)] - v[ aIndex(size, x, y-1)]);
                 var u_val = 0;
-                srcU[y][x] = u_val;
-                srcV[y][x] = v_val;
+                srcU[ aIndex(size, x, y)] = u_val;
+                srcV[ aIndex(size, x, y)] = v_val;
             }
         }
         this.setBoundary(srcV, 0);
@@ -152,7 +149,7 @@ class Fluid {
         for (var k = 0; k < this.projectIterations; k++) {
             for (var y = 1; y < size-1; y++) {
                 for (var x = 1; x < size-1; x++) {
-                    srcU[y][x] = (srcV[y][x] + srcU[y][x-1] + srcU[y][x+1] + srcU[y-1][x] + srcU[y+1][x]) / 4;
+                    srcU[ aIndex(size, x, y)] = (srcV[ aIndex(size, x, y)] + srcU[ aIndex(size, x-1, y)] + srcU[ aIndex(size, x+1, y)] + srcU[ aIndex(size, x, y-1)] + srcU[ aIndex(size, x, y+1)]) / 4;
                 }
             }
             this.setBoundary(srcU, 0);
@@ -160,8 +157,8 @@ class Fluid {
 
         for (var y = 1; y < size - 1; y++) {
             for (var x = 1; x < size - 1; x++) {
-                u[y][x] -= 0.5 * (srcU[y][x+1] - srcU[y][x-1])/h;
-                v[y][x] -= 0.5 * (srcU[y+1][x] - srcU[y-1][x])/h;
+                u[ aIndex(size, x, y)] -= 0.5 * (srcU[ aIndex(size, x+1, y)] - srcU[ aIndex(size, x-1, y)])/h;
+                v[ aIndex(size, x, y)] -= 0.5 * (srcU[ aIndex(size, x, y+1)] - srcU[ aIndex(size, x, y-1)])/h;
             }
         }
         this.setBoundary(u, 1);
@@ -189,7 +186,7 @@ class Fluid {
     }
 
     getInterpGrid(grid, x, y, scale) {
-        var size = grid.length;
+        var size = this.size;
 
         var grid_x = Math.floor(x / scale);
         var grid_y = Math.floor(y / scale);
@@ -205,10 +202,10 @@ class Fluid {
         if (grid_x == size - 1) x1 = x0;
         if (grid_y == size - 1) y1 = y0;
 
-        var v00 = grid[x0][y0];
-        var v01 = grid[x1][y0];
-        var v10 = grid[x0][y1];
-        var v11 = grid[x1][y1];
+        var v00 = grid[ aIndex(size, y0, x0)];
+        var v01 = grid[ aIndex(size, y0, x1)];
+        var v10 = grid[ aIndex(size, y1, x0)];
+        var v11 = grid[ aIndex(size, y1, x1)];
         var interp_val = bilinear(v00, v01, v10, v11, (x % scale) / scale, (y % scale) / scale);
 
         return interp_val;
@@ -226,7 +223,7 @@ class Fluid {
         if (this.bilinearInterpolate) {
             var interp_val = this.getInterpGrid(this.dens, x, y, scale);
         } else {
-            var interp_val = this.dens[ Math.floor(x / scale)][ Math.floor(y / scale)];
+            var interp_val = this.dens[ aIndex(this.size,  Math.floor(y / scale),  Math.floor(x / scale))];
         }
 
         if (this.imageBackground) {
@@ -293,12 +290,17 @@ class Fluid {
     }
 
     gridToImageData(grid) {
+        // var data = [];
+        // var size = this.size;
+        // for (var i = 0; i < size * size; i++) {
+        //     var y = Math.floor(i / size);
+        //     var x = i % size;
+        //     data.push(clamp(grid[ aIndex(size, y, x)], 0, 255)); // R
+        // }
         var data = [];
-        var size = grid[0].length;
-        for (var i = 0; i < size * size; i++) {
-            var y = Math.floor(i / size);
-            var x = i % size;
-            data.push(clamp(grid[x][y], 0, 255)); // R
+        var size = grid.length;
+        for (var i = 0; i < size; i++) {
+            data.push(clamp(grid[i], 0, 255)); // R
         }
         return new Uint8Array(data);
     }
@@ -321,21 +323,21 @@ class Fluid {
     setBoundary(grid, type) {
         for (var i = 1; i < this.size; i++) {
             if (type == 0) {
-                grid[i][0]     = 0;
-                grid[i][this.size-1]   = 0;
-                grid[0][i]     = 0;
-                grid[this.size-1][i]   = 0;
+                grid[ aIndex(this.size, 0, i)]     = 0;
+                grid[ aIndex(this.size, this.size-1, i)]   = 0;
+                grid[ aIndex(this.size, i, 0)]     = 0;
+                grid[ aIndex(this.size, i, this.size-1)]   = 0;
             } else {
-                grid[i][0]     = type == 1 ? -grid[i][1]   : grid[i][1];
-                grid[i][this.size-1]   = type == 1 ? -grid[i][this.size-2] : grid[i][this.size-2];
-                grid[0][i]     = type == 2 ? -grid[1][i]   : grid[1][i];
-                grid[this.size-1][i]   = type == 2 ? -grid[this.size-2][i] : grid[this.size-2][i];
+                grid[ aIndex(this.size, 0, i)]     = type == 1 ? -grid[ aIndex(this.size, 1, i)]   : grid[ aIndex(this.size, 1, i)];
+                grid[ aIndex(this.size, this.size-1, i)]   = type == 1 ? -grid[ aIndex(this.size, this.size-2, i)] : grid[ aIndex(this.size, this.size-2, i)];
+                grid[ aIndex(this.size, i, 0)]     = type == 2 ? -grid[ aIndex(this.size, i, 1)]   : grid[ aIndex(this.size, i, 1)];
+                grid[ aIndex(this.size, i, this.size-1)]   = type == 2 ? -grid[ aIndex(this.size, i, this.size-2)] : grid[ aIndex(this.size, i, this.size-2)];
             }
         }
-        grid[0][0]     = 0.5 * ( grid[0][1] + grid[1][0]);
-        grid[this.size-1][0]   = 0.5 * ( grid[this.size-1][1] + grid[this.size-2][0]);
-        grid[0][this.size-1]   = 0.5 * ( grid[0][this.size-2] + grid[1][this.size-1]);
-        grid[this.size-1][this.size-1] = 0.5 * ( grid[this.size-1][this.size-2] + grid[this.size-2][this.size-1]);
+        grid[ aIndex(this.size, 0, 0)]     = 0.5 * ( grid[ aIndex(this.size, 1, 0)] + grid[ aIndex(this.size, 0, 1)]);
+        grid[ aIndex(this.size, 0, this.size-1)]   = 0.5 * ( grid[ aIndex(this.size, 1, this.size-1)] + grid[ aIndex(this.size, 0, this.size-2)]);
+        grid[ aIndex(this.size, this.size-1, 0)]   = 0.5 * ( grid[ aIndex(this.size, this.size-2, 0)] + grid[ aIndex(this.size, this.size-1, 1)]);
+        grid[ aIndex(this.size, this.size-1, this.size-1)] = 0.5 * ( grid[ aIndex(this.size, this.size-2, this.size-1)] + grid[ aIndex(this.size, this.size-1, this.size-2)]);
     }
 
     registerFrameListener(canvasController) {
@@ -364,7 +366,7 @@ class Fluid {
         var prevMouseFluidY = Math.floor(prevMousePixY / scale);
 
         // Add density
-        if (frameGlobals.mouseButton[0] || 1) {
+        if (frameGlobals.mouseButton[0]) {
             this.splatGrid(this.dens, mouseFluidX, mouseFluidY, this.densAmount * ((mouseFluidY - prevMouseFluidY)**2 + (mouseFluidX - prevMouseFluidX)**2) * 0.06);
         }
         if (frameGlobals.mouseButton[1]) {
@@ -372,9 +374,9 @@ class Fluid {
         }
 
         // Add velocity
-        if (frameGlobals.mouseButton[2] || frameGlobals.mouseButton[0] || 1) {
-            this.splatGrid(this.u, mouseFluidX, mouseFluidY, (mouseFluidY - prevMouseFluidY) * this.velStrength);
-            this.splatGrid(this.v, mouseFluidX, mouseFluidY, (mouseFluidX - prevMouseFluidX) * this.velStrength);
+        if (frameGlobals.mouseButton[2]) {
+            this.splatGrid(this.u, mouseFluidX, mouseFluidY, (mouseFluidX - prevMouseFluidX) * this.velStrength);
+            this.splatGrid(this.v, mouseFluidX, mouseFluidY, (mouseFluidY - prevMouseFluidY) * this.velStrength);
         }
     }
 };
